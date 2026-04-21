@@ -3,43 +3,38 @@ from PIL import Image
 from conjugate_gradient import conjugate_gradient
 from matrix_inverse import matrix_inverse_gauss_jordan
 
+
 def load_image_for_display(uploaded_file):
-    """Load at native resolution (max 512px) — used only for display."""
+    """Load at native resolution (max 512 px) for display."""
     img = Image.open(uploaded_file).convert("L")
     img.thumbnail((512, 512), Image.LANCZOS)   # high-quality downscale, keeps aspect ratio
     return np.array(img, dtype=float) / 255.0
 
+
 def load_image_as_gray(uploaded_file):
-    """Load at 128×128 — used for pixel-loop processing (keeps it fast)."""
-    img = Image.open(uploaded_file).convert("L")
-    img = img.resize((128, 128), Image.LANCZOS)
+    """Load at 128×128 for lightweight processing."""
+    img = Image.open(uploaded_file).convert("L").resize((128, 128), Image.LANCZOS)
     return np.array(img, dtype=float) / 255.0
+
 
 def apply_sharpening(image_array):
     """
-    Uses Matrix Inverse concept.
+    Sharpen via Matrix Inverse (Gauss-Jordan Elimination).
 
-    How it works:
-    - We define a 3x3 invertible blur matrix A  (det = 1, clean integer inverse)
-    - We compute A_inverse using Gauss-Jordan elimination
-    - We apply the normalised blur kernel as convolution to get a blurred image
-    - Then use unsharp masking: sharpened = original + strength * (original - blurred)
-      → this is the correct way to 'apply A⁻¹': recover what blurring removed
+    Steps:
+      1. Define invertible blur matrix A  (det = 1, full-rank 3×3)
+      2. Compute A⁻¹ via Gauss-Jordan
+      3. Apply blur kernel as 2-D convolution (vectorised, no Python loops)
+      4. Unsharp masking: sharpened = original + strength × (original − blurred)
     """
-
-    # Step 1: Define an invertible blur matrix with det(A) = 1.
-    # All three rows are linearly independent, so the matrix is full-rank.
-    # A = [[1,2,1],[2,5,2],[1,2,2]]  →  A⁻¹ = [[6,-2,-1],[-2,1,0],[-1,0,1]]
-    # Values stay small → no blow-up when displayed or used.
     blur_matrix = np.array([
         [1.0, 2.0, 1.0],
         [2.0, 5.0, 2.0],
-        [1.0, 2.0, 2.0]
+        [1.0, 2.0, 2.0],
     ])
 
     # Step 2: Compute inverse using our Gauss-Jordan implementation
     inverse_filter = matrix_inverse_gauss_jordan(blur_matrix.tolist())
-
     if inverse_filter is None:
         try:
             inverse_filter = np.linalg.inv(blur_matrix)
@@ -62,10 +57,10 @@ def apply_sharpening(image_array):
     # Step 4: Unsharp masking — recover the detail that blurring suppressed.
     # sharpened = original + strength × (original - blurred)
     strength = 1.5
-    result = image_array + strength * (image_array - blurred)
-    result = np.clip(result, 0, 1)
+    result = np.clip(image_array + strength * (image_array - blurred), 0, 1)
 
     return result, blur_matrix, inverse_filter
+
 
 def apply_denoising(image_array):
     """
@@ -87,13 +82,12 @@ def apply_denoising(image_array):
         L = (2 * np.eye(n)
              - np.diag(np.ones(n - 1),  1)
              - np.diag(np.ones(n - 1), -1))
-        L[0, 0]   = 1   # Neumann BC
-        L[-1, -1] = 1
+        L[0, 0] = L[-1, -1] = 1      # Neumann boundary conditions
         return np.eye(n) + lam * L
 
     n_rows, n_cols = noisy.shape
-    A_row = build_A(n_cols)   # reused for every row
-    A_col = build_A(n_rows)   # reused for every column
+    A_row = build_A(n_cols)
+    A_col = build_A(n_rows)
 
     # Pass 1: smooth along rows
     after_rows = np.copy(noisy)
@@ -110,4 +104,4 @@ def apply_denoising(image_array):
         if j == 0:
             history_all = history
 
-    return denoised, noisy, history_all
+    return denoised, noisy, history_all

@@ -1,137 +1,172 @@
-import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-from image_processor import load_image_as_gray, load_image_for_display, apply_sharpening, apply_denoising
+import matplotlib
+import streamlit as st
+from PIL import Image as PILImage
 
-# ── Page config ──────────────────────────────────────────
-st.set_page_config(
-    page_title="Image Processing Studio",
-    page_icon="🖼️",
-    layout="wide"
+import styles
+from image_processor import (
+    load_image_as_gray,
+    load_image_for_display,
+    apply_sharpening,
+    apply_denoising,
 )
 
-st.title("🖼️ Image Processing Studio")
-st.markdown("**Group 33 | ADMC Assignment** — Matrix Inverse & Conjugate Gradient")
-st.divider()
+# ── Page configuration ────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="Image Processing Studio",
+    page_icon="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◈</text></svg>",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+styles.inject_css()
+styles.hero()
 
-# ── Sidebar ───────────────────────────────────────────────
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.header("⚙️ Controls")
-    uploaded_file = st.file_uploader(
-        "Upload an Image", type=["png", "jpg", "jpeg"]
-    )
-    operation = st.radio(
-        "Choose Operation",
-        ["Sharpen (Matrix Inverse)", "Denoise (Conjugate Gradient)"]
-    )
-    run_btn = st.button("▶ Run Processing", type="primary")
+    styles.sidebar_logo()
 
-# ── Main area ─────────────────────────────────────────────
+    styles.sb_label("Input")
+    uploaded_file = st.file_uploader(
+        "Upload Image", type=["png", "jpg", "jpeg"],
+        label_visibility="collapsed",
+    )
+
+    styles.sb_label("Operation", margin_top=True)
+    operation = st.radio(
+        "Operation",
+        ["Sharpen (Matrix Inverse)", "Denoise (Conjugate Gradient)"],
+        label_visibility="collapsed",
+    )
+    styles.sb_algorithm_card(operation)
+
+    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+    run_btn = st.button("Run Processing", type="primary", use_container_width=True)
+
+    st.markdown("---")
+    st.markdown(
+        '<p style="color:#475569;font-size:0.8rem;text-align:center">NumPy · PIL · Streamlit</p>',
+        unsafe_allow_html=True,
+    )
+
+# ── Guard: no image uploaded ──────────────────────────────────────────────────
 if uploaded_file is None:
-    st.info("👈 Upload an image from the sidebar to get started.")
+    styles.upload_prompt()
     st.stop()
 
-# Load image — high-res for display, small for processing
-display_image = load_image_for_display(uploaded_file)
-uploaded_file.seek(0)          # reset stream so it can be read again
-image_array = load_image_as_gray(uploaded_file)
+# ── Load image at two resolutions ─────────────────────────────────────────────
+display_image = load_image_for_display(uploaded_file)   # native res (≤512px)
+uploaded_file.seek(0)
+image_array = load_image_as_gray(uploaded_file)          # 128×128 for processing
 
-col1, col2 = st.columns(2)
-
+# ── Main columns ──────────────────────────────────────────────────────────────
+col1, col2 = st.columns(2, gap="large")
 with col1:
-    st.subheader("📷 Original Image")
-    st.image(display_image, width=300)
+    styles.img_frame(display_image, variant="a", label="Original Image")
 
-if run_btn:
-    with st.spinner("Processing..."):
+if not run_btn:
+    with col2:
+        styles.ready_box()
+    st.stop()
 
-        # ── Sharpen ──────────────────────────────────────
-        if operation == "Sharpen (Matrix Inverse)":
-            result, blur_matrix, inv = apply_sharpening(display_image)  # full-res
+# ── Processing ────────────────────────────────────────────────────────────────
+with st.spinner("Processing — please wait…"):
 
-            with col2:
-                st.subheader("✨ Sharpened Image")
-                st.image(result, width=300)
+    # ── 1. Sharpen (Matrix Inverse) ───────────────────────────────────────────
+    if operation == "Sharpen (Matrix Inverse)":
+        result, blur_matrix, inv_matrix = apply_sharpening(display_image)
 
-            st.divider()
-            st.subheader("🧮 Math Behind It — Matrix Inverse")
+        with col2:
+            styles.img_frame(result, variant="b", label="Sharpened")
 
-            mc1, mc2, mc3 = st.columns(3)
+        styles.section_header("Matrix Inverse — Gauss-Jordan Elimination", dot="purple")
 
-            with mc1:
-                st.markdown("**Blur Matrix (A)**")
-                st.dataframe(
-                    {f"col{i}": blur_matrix[:, i].round(4) for i in range(3)},
-                    use_container_width=True
-                )
+        mc1, mc2, mc3 = st.columns(3, gap="medium")
+        with mc1:
+            styles.math_header("Step 1 — Define", "Blur Matrix (A)")
+            st.dataframe({f"col{i}": blur_matrix[:, i].round(4) for i in range(3)},
+                         use_container_width=True, hide_index=False)
+        with mc2:
+            styles.math_header("Step 2 — Invert", "Inverse Filter (A⁻¹)")
+            st.dataframe({f"col{i}": inv_matrix[:, i].round(4) for i in range(3)},
+                         use_container_width=True, hide_index=False)
+        with mc3:
+            product = np.round(blur_matrix @ inv_matrix, 2)
+            styles.math_header("Step 3 — Verify", "A × A⁻¹ = I")
+            st.dataframe({f"col{i}": product[:, i] for i in range(3)},
+                         use_container_width=True, hide_index=False)
 
-            with mc2:
-                st.markdown("**Inverse Filter (A⁻¹)**")
-                st.dataframe(
-                    {f"col{i}": inv[:, i].round(4) for i in range(3)},
-                    use_container_width=True
-                )
+        styles.ok_strip("Sharpening applied via Gauss-Jordan Elimination")
 
-            with mc3:
-                product = np.round(blur_matrix @ inv, 4)
-                st.markdown("**Verification: A × A⁻¹ = I**")
-                st.dataframe(
-                    {f"col{i}": product[:, i] for i in range(3)},
-                    use_container_width=True
-                )
+    # ── 2. Denoise (Conjugate Gradient) ──────────────────────────────────────
+    elif operation == "Denoise (Conjugate Gradient)":
 
-            st.success("✅ Sharpening applied using Gauss-Jordan Elimination!")
+        # Downscale to max 256px for CG processing, then upscale result
+        disp_h, disp_w = display_image.shape
+        scale  = min(1.0, 256 / max(disp_h, disp_w))
+        proc_h = max(1, int(disp_h * scale))
+        proc_w = max(1, int(disp_w * scale))
 
-        # ── Denoise ──────────────────────────────────────
-        elif operation == "Denoise (Conjugate Gradient)":
-            from PIL import Image as PILImage
-            disp_h, disp_w = display_image.shape
+        proc_arr = (
+            np.array(
+                PILImage.fromarray((display_image * 255).astype(np.uint8))
+                        .resize((proc_w, proc_h), PILImage.LANCZOS),
+                dtype=float,
+            ) / 255.0
+        )
 
-            # Downscale to max 256px for fast CG processing (still 2× sharper than 128px)
-            scale   = min(1.0, 256 / max(disp_h, disp_w))
-            proc_h  = max(1, int(disp_h * scale))
-            proc_w  = max(1, int(disp_w * scale))
-            proc_pil = PILImage.fromarray((display_image * 255).astype(np.uint8))
-            proc_arr = np.array(proc_pil.resize((proc_w, proc_h), PILImage.LANCZOS), dtype=float) / 255.0
+        denoised, noisy, history = apply_denoising(proc_arr)
 
-            result, noisy, history = apply_denoising(proc_arr)   # 256px-resolution
+        def upscale(arr):
+            return (
+                np.array(
+                    PILImage.fromarray((arr * 255).astype(np.uint8))
+                            .resize((disp_w, disp_h), PILImage.LANCZOS),
+                    dtype=float,
+                ) / 255.0
+            )
 
-            # Upscale both back to the original display size
-            def upscale(arr):
-                pil = PILImage.fromarray((arr * 255).astype(np.uint8))
-                return np.array(pil.resize((disp_w, disp_h), PILImage.LANCZOS), dtype=float) / 255.0
+        noisy_display  = upscale(noisy)
+        result_display = upscale(denoised)
 
-            noisy_display  = upscale(noisy)
-            result_display = upscale(result)
+        with col2:
+            styles.img_frame(result_display, variant="b", label="Denoised")
 
-            # 3-column comparison: clean → noisy → denoised
-            st.divider()
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.markdown("**📷 Original (clean)**")
-                st.image(display_image, use_container_width=True)
-            with c2:
-                st.markdown("**🔊 Noisy input** *(σ = 0.05)*")
-                st.image(noisy_display, use_container_width=True)
-            with c3:
-                st.markdown("**🧹 CG Denoised**")
-                st.image(result_display, use_container_width=True)
+        # Side-by-side comparison
+        styles.section_header("Side-by-Side Comparison", dot="cyan")
+        c1, c2, c3 = st.columns(3, gap="medium")
+        with c1:
+            styles.img_frame(display_image, variant="a", label="Original")
+        with c2:
+            styles.img_label('Noisy Input &nbsp;<span style="font-weight:400;color:#64748b">(σ = 0.05)</span>', variant="c")
+            st.markdown('<div class="img-frame">', unsafe_allow_html=True)
+            st.image(noisy_display, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        with c3:
+            styles.img_frame(result_display, variant="b", label="CG Denoised")
 
-            st.divider()
-            st.subheader("📈 Conjugate Gradient — Convergence")
+        # Convergence chart
+        styles.section_header("Conjugate Gradient — Convergence", dot="green")
 
-            ks    = [h["k"] for h in history]
-            norms = [h["residual_norm"] for h in history]
+        ks    = [h["k"]             for h in history]
+        norms = [h["residual_norm"] for h in history]
 
-            fig, ax = plt.subplots(figsize=(8, 3))
-            ax.semilogy(ks, norms, marker="o", color="#0F6E56",
-                        linewidth=2, markersize=4)
-            ax.set_xlabel("Iteration k")
-            ax.set_ylabel("||r|| (log scale)")
-            ax.set_title("Residual Norm vs Iteration")
-            ax.grid(True, alpha=0.3)
-            st.pyplot(fig)
+        matplotlib.rcParams.update(styles.PLOT_STYLE)
+        fig, ax = plt.subplots(figsize=(9, 3.2))
+        ax.semilogy(ks, norms, color="#6366f1", linewidth=2.0, zorder=3)
+        ax.fill_between(ks, norms, alpha=0.1, color="#6366f1")
+        ax.scatter(ks, norms, color="#818cf8", s=22, zorder=5, edgecolors="none")
+        ax.set_xlabel("Iteration  k", fontsize=10)
+        ax.set_ylabel("Residual norm  ‖r‖", fontsize=10)
+        ax.set_title("Residual Norm vs. Iteration Number", fontsize=11,
+                     fontweight="bold", color=styles.PLOT_TITLE_COLOR, pad=10)
+        ax.grid(True, alpha=0.5)
+        fig.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
 
-            st.metric("Total Iterations", len(history))
-            st.metric("Final Residual Norm", f"{norms[-1]:.2e}")
-            st.success("✅ Denoising solved using Conjugate Gradient Method!")
+        styles.metric_pills(len(history), norms[-1], norms[0])
+        styles.ok_strip(
+            "Denoising complete — Conjugate Gradient solved (I + λL)x = b "
+            "with Tikhonov regularisation"
+        )
