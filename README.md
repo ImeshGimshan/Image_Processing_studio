@@ -91,6 +91,12 @@ cd image_processing_studio
 
 Using a virtual environment keeps your global Python installation clean.
 
+**Windows (Gitbash)**
+```powershell
+python -m venv venv
+source venv/Scripts/activate
+```
+
 **Windows (PowerShell)**
 ```powershell
 python -m venv venv
