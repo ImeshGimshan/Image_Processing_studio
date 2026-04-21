@@ -80,7 +80,7 @@ image_processing_studio/
 
 ```bash
 # Option A — Git clone
-git clone <your-repository-url>
+git clone https://github.com/ImeshGimshan/Image_Processing_studio.git
 cd image_processing_studio
 
 # Option B — Download ZIP and extract, then open a terminal in the folder
